@@ -10,8 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -19,45 +18,24 @@ jobs:
           php-version: '8.2'
           extensions: curl, json, gd
 
-      - name: Install Composer dependencies
+      - name: Install Composer
         run: composer install --no-dev --prefer-dist
 
-      - name: Create .env file
+      - name: Create .env
         run: |
           cat > .env << 'ENVEOF'
           DIVINEAPI_AUTH_TOKEN="${{ secrets.DIVINEAPI_AUTH_TOKEN }}"
           DIVINEAPI_KEY="${{ secrets.DIVINEAPI_KEY }}"
           GMAIL_ADDRESS="${{ secrets.GMAIL_ADDRESS }}"
           GMAIL_APP_PASSWORD="${{ secrets.GMAIL_APP_PASSWORD }}"
-          CLAUDE_API_KEY="${{ secrets.CLAUDE_API_KEY }}"
           ENVEOF
 
-      - name: Step 1 — Generate English horoscope
+      - name: Generate English horoscope
         run: php src/DailyPredictionsAggregator.php
 
-      - name: Step 2 — Convert to Hindi via Claude
-        run: php scripts/convert_to_hindi.php
-
-      - name: Step 3 — Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Step 4 — Install Slack SDK
-        run: pip install slack-sdk
-
-      - name: Step 5 — Send to Slack
-        run: python scripts/send_to_slack.py
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_USER_ID: ${{ secrets.SLACK_USER_ID }}
-
-      - name: Backup files as artifact
-        if: always()
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: horoscope-files-${{ github.run_number }}
-          path: |
-            daily_horoscope.xlsx
-            daily_horoscope_hindi.xlsx
+          name: horoscope-${{ github.run_number }}
+          path: daily_horoscope.xlsx
           retention-days: 30
