@@ -1,0 +1,5 @@
+vendor/
+.env
+.DS_Store
+daily_horoscope.xlsx
+composer.lock

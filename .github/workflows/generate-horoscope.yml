@@ -1,0 +1,53 @@
+name: Generate Daily Horoscope
+
+on:
+  schedule:
+    - cron: '0 9 22 * *'  # Runs on 22nd of every month at 9 AM UTC
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, json
+
+      - name: Install Composer dependencies
+        run: composer install --no-dev --prefer-dist
+
+      - name: Run horoscope generator
+        env:
+          DIVINEAPI_AUTH_TOKEN: ${{ secrets.DIVINEAPI_AUTH_TOKEN }}
+          DIVINEAPI_KEY: ${{ secrets.DIVINEAPI_KEY }}
+        run: php src/DailyPredictionsAggregator.php
+
+      - name: Send file via email
+        run: |
+          php -r "
+          \$to = '${{ secrets.GMAIL_ADDRESS }}';
+          \$subject = 'Daily Horoscope - ' . date('Y-m-d');
+          \$message = 'Daily horoscope file attached.';
+          \$file = 'daily_horoscope.xlsx';
+          
+          if (file_exists(\$file)) {
+            // Use mail() or a library like PHPMailer
+            echo 'File generated successfully';
+          } else {
+            echo 'Error: File not generated';
+            exit(1);
+          }
+          "
+
+      - name: Upload as artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: daily_horoscope
+          path: daily_horoscope.xlsx

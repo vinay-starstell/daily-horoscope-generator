@@ -1,0 +1,9 @@
+{
+  "name": "starstell/daily-horoscope-generator",
+  "description": "Generates daily horoscope Excel file via API",
+  "require": {
+    "php": ">=7.4",
+    "phpoffice/phpspreadsheet": "^1.29",
+    "symfony/dotenv": "^6.0"
+  }
+}
