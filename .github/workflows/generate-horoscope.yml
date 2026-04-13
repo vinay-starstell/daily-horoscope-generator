@@ -2,7 +2,7 @@ name: Generate Daily Horoscope
 
 on:
   schedule:
-    - cron: '0 9 22 * *'  # Runs on 22nd of every month at 9 AM UTC
+    - cron: '0 9 20 * *'  # Runs on 20th of every month at 9 AM UTC
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -22,28 +22,17 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --no-dev --prefer-dist
 
-      - name: Run horoscope generator
-        env:
-          DIVINEAPI_AUTH_TOKEN: ${{ secrets.DIVINEAPI_AUTH_TOKEN }}
-          DIVINEAPI_KEY: ${{ secrets.DIVINEAPI_KEY }}
-        run: php src/DailyPredictionsAggregator.php
-
-      - name: Send file via email
+      - name: Create .env file
         run: |
-          php -r "
-          \$to = '${{ secrets.GMAIL_ADDRESS }}';
-          \$subject = 'Daily Horoscope - ' . date('Y-m-d');
-          \$message = 'Daily horoscope file attached.';
-          \$file = 'daily_horoscope.xlsx';
-          
-          if (file_exists(\$file)) {
-            // Use mail() or a library like PHPMailer
-            echo 'File generated successfully';
-          } else {
-            echo 'Error: File not generated';
-            exit(1);
-          }
-          "
+          cat > .env << 'ENVEOF'
+          DIVINEAPI_AUTH_TOKEN=${{ secrets.DIVINEAPI_AUTH_TOKEN }}
+          DIVINEAPI_KEY=${{ secrets.DIVINEAPI_KEY }}
+          GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}
+          ENVEOF
+
+      - name: Run horoscope generator
+        run: php src/DailyPredictionsAggregator.php
 
       - name: Upload as artifact (backup)
         if: always()
@@ -51,3 +40,12 @@ jobs:
         with:
           name: daily_horoscope
           path: daily_horoscope.xlsx
+
+      - name: Commit and push file (optional backup to repo)
+        if: success()
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git add daily_horoscope.xlsx
+          git commit -m "Generated horoscope file - $(date +'%Y-%m-%d')" || echo "No changes to commit"
+          git push || echo "Nothing to push"
