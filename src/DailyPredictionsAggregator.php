@@ -10,15 +10,13 @@ use PHPMailer\PHPMailer\Exception;
 $dotenv = new Symfony\Component\Dotenv\Dotenv();
 $dotenv->usePutenv()->load(__DIR__ . '/../.env');
 
-// Get credentials from environment variables
 $authToken = $_ENV['DIVINEAPI_AUTH_TOKEN'] ?? null;
 $apiKey = $_ENV['DIVINEAPI_KEY'] ?? null;
 $gmailAddress = $_ENV['GMAIL_ADDRESS'] ?? null;
 $gmailPassword = $_ENV['GMAIL_APP_PASSWORD'] ?? null;
 
-// Validate credentials
 if (!$authToken || !$apiKey || !$gmailAddress || !$gmailPassword) {
-    die("Error: Missing required environment variables. Check .env file.\n");
+    die("Error: Missing required environment variables.\n");
 }
 
 function fetchHoroscopeData($date, $sign, $authToken, $apiKey)
@@ -52,7 +50,6 @@ function fetchHoroscopeData($date, $sign, $authToken, $apiKey)
     curl_close($ch);
 
     if ($httpCode !== 200) {
-        echo "Error: API returned HTTP $httpCode for $sign on " . $date->format('Y-m-d') . "\n";
         return null;
     }
 
@@ -80,23 +77,12 @@ function fetchHoroscopeData($date, $sign, $authToken, $apiKey)
     return null;
 }
 
-// Calculate dynamic date range
-// Run on 20th: fetch from 20th of current month to 20th of next month
+// Start from today, fetch next 31 days
 $today = new DateTime();
-$currentDay = (int)$today->format('d');
+$startDate = clone $today;
+$endDate = (clone $today)->modify('+31 days');
 
-// If script runs between 20-30 of month, fetch current month 20th to next month 20th
-// If script runs before 20th, fetch previous month 20th to current month 20th
-if ($currentDay >= 20) {
-    $startDate = new DateTime($today->format('Y-m-20'));
-    $endDate = (clone $startDate)->modify('+1 month');
-} else {
-    $startDate = (clone $today)->modify('-1 month')->format('Y-m-20');
-    $startDate = new DateTime($startDate);
-    $endDate = new DateTime($today->format('Y-m-20'));
-}
-
-echo "Fetching horoscope data from " . $startDate->format('Y-m-d') . " to " . $endDate->format('Y-m-d') . "\n";
+echo "Attempting to fetch data from " . $startDate->format('Y-m-d') . " to " . $endDate->format('Y-m-d') . "\n";
 
 // Initialize Excel file
 $spreadsheet = new Spreadsheet();
@@ -112,11 +98,16 @@ $signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorp
 
 $row = 2;
 $index = 1;
-$errorCount = 0;
+$datesWithData = [];
+$datesWithoutData = [];
+$currentDate = clone $startDate;
 
-while ($startDate <= $endDate) {
+while ($currentDate <= $endDate) {
+    $dateString = $currentDate->format('Y-m-d');
+    $hasDataForDay = false;
+
     foreach ($signs as $sign) {
-        $data = fetchHoroscopeData($startDate, $sign, $authToken, $apiKey);
+        $data = fetchHoroscopeData($currentDate, $sign, $authToken, $apiKey);
         if ($data) {
             $sheet->setCellValue("A$row", $index);
             $sheet->setCellValue("B$row", $data['Date']);
@@ -124,15 +115,39 @@ while ($startDate <= $endDate) {
             $sheet->setCellValue("D$row", $data['Prediction']);
             $row++;
             $index++;
-        } else {
-            $errorCount++;
+            $hasDataForDay = true;
         }
     }
-    $startDate->modify('+1 day');
+
+    if ($hasDataForDay) {
+        $datesWithData[] = $dateString;
+    } else {
+        $datesWithoutData[] = $dateString;
+    }
+
+    $currentDate->modify('+1 day');
 }
 
-if ($errorCount > 0) {
-    echo "Warning: $errorCount API calls failed. Check credentials and API limits.\n";
+if (empty($datesWithData)) {
+    die("Error: No data found for the requested date range.\n");
+}
+
+// Add summary sheet
+$summarySheet = $spreadsheet->createSheet();
+$summarySheet->setTitle("Summary");
+$summarySheet->setCellValue('A1', 'Data Summary');
+$summarySheet->setCellValue('A2', 'Date Range');
+$summarySheet->setCellValue('B2', min($datesWithData) . ' to ' . max($datesWithData));
+$summarySheet->setCellValue('A3', 'Total Entries');
+$summarySheet->setCellValue('B3', $index - 1);
+$summarySheet->setCellValue('A4', 'Dates with Data');
+$summarySheet->setCellValue('B4', count($datesWithData));
+$summarySheet->setCellValue('A5', 'Missing Dates');
+$summarySheet->setCellValue('B5', count($datesWithoutData));
+
+if (!empty($datesWithoutData)) {
+    $summarySheet->setCellValue('A6', 'Missing Date List');
+    $summarySheet->setCellValue('B6', implode(", ", $datesWithoutData));
 }
 
 // Save Excel file
@@ -140,15 +155,27 @@ $filename = 'daily_horoscope.xlsx';
 $writer = new Xlsx($spreadsheet);
 $writer->save($filename);
 
-echo "Horoscope data saved to $filename\n";
+echo "✅ Horoscope data saved to $filename\n";
+echo "📊 Data Range: " . min($datesWithData) . " to " . max($datesWithData) . "\n";
+echo "📈 Total Entries: " . ($index - 1) . "\n";
+if (!empty($datesWithoutData)) {
+    echo "⚠️  Missing " . count($datesWithoutData) . " date(s): " . implode(", ", $datesWithoutData) . "\n";
+}
 
-// Send email
+// Send email with summary
+$summary = "📊 Daily Horoscope Data Generated\n\n";
+$summary .= "📅 Data Range: " . min($datesWithData) . " to " . max($datesWithData) . "\n";
+$summary .= "📈 Total Entries: " . ($index - 1) . "\n";
+if (!empty($datesWithoutData)) {
+    $summary .= "⚠️ Missing Dates (" . count($datesWithoutData) . "): " . implode(", ", $datesWithoutData) . "\n";
+}
+$summary .= "\nPlease check the Summary sheet in the attached file for details.";
+
 echo "Sending email to $gmailAddress...\n";
 
 $mail = new PHPMailer(true);
 
 try {
-    // SMTP configuration
     $mail->isSMTP();
     $mail->Host = 'smtp.gmail.com';
     $mail->SMTPAuth = true;
@@ -157,17 +184,14 @@ try {
     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
     $mail->Port = 587;
 
-    // Email details
     $mail->setFrom($gmailAddress, 'StarsTell Horoscope Generator');
     $mail->addAddress($gmailAddress);
     $mail->Subject = 'Daily Horoscope - ' . date('Y-m-d');
-    $mail->Body = "Please find attached the daily horoscope file.";
+    $mail->Body = $summary;
 
-    // Attach file
     $mail->addAttachment($filename);
-
     $mail->send();
-    echo "Email sent successfully to $gmailAddress\n";
+    echo "✅ Email sent successfully\n";
 } catch (Exception $e) {
     die("Email failed: {$mail->ErrorInfo}\n");
 }
