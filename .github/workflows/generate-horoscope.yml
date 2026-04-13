@@ -2,8 +2,8 @@ name: Generate Daily Horoscope
 
 on:
   schedule:
-    - cron: '0 9 20 * *'  # Runs on 20th of every month at 9 AM UTC
-  workflow_dispatch:  # Allow manual trigger
+    - cron: '0 9 20 * *'
+  workflow_dispatch:
 
 jobs:
   generate:
@@ -11,13 +11,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: curl, json
+          extensions: curl, json, gd
 
       - name: Install Composer dependencies
         run: composer install --no-dev --prefer-dist
@@ -29,23 +29,35 @@ jobs:
           DIVINEAPI_KEY=${{ secrets.DIVINEAPI_KEY }}
           GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}
+          CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
           ENVEOF
 
-      - name: Run horoscope generator
+      - name: Step 1 — Generate English horoscope
         run: php src/DailyPredictionsAggregator.php
 
-      - name: Upload as artifact (backup)
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: daily_horoscope
-          path: daily_horoscope.xlsx
+      - name: Step 2 — Convert to Hindi via Claude
+        run: php scripts/convert_to_hindi.php
 
-      - name: Commit and push file (optional backup to repo)
-        if: success()
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git add daily_horoscope.xlsx
-          git commit -m "Generated horoscope file - $(date +'%Y-%m-%d')" || echo "No changes to commit"
-          git push || echo "Nothing to push"
+      - name: Step 3 — Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Step 4 — Install Slack SDK
+        run: pip install slack-sdk
+
+      - name: Step 5 — Send to Slack
+        run: python scripts/send_to_slack.py
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_USER_ID: ${{ secrets.SLACK_USER_ID }}
+
+      - name: Backup files as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: horoscope-files-${{ github.run_number }}
+          path: |
+            daily_horoscope.xlsx
+            daily_horoscope_hindi.xlsx
+          retention-days: 30
