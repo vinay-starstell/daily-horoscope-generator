@@ -5,6 +5,9 @@
     "php": ">=7.4",
     "phpoffice/phpspreadsheet": "^1.29",
     "symfony/dotenv": "^6.0",
-    "phpmailer/phpmailer": "^6.8"
+    "phpmailer/phpmailer": "^6.8",
+    "ezyang/htmlpurifier": "^4.16",
+    "markbaker/complex": "^3.0",
+    "markbaker/matrix": "^2.1"
   }
 }
